@@ -1,0 +1,27 @@
+Se requiere una app movil para la Feria 115 años del Banco Caja Social
+Se hará una feria de participacion con más o menos 400 empleados
+
+Pantalla 1 - inicio_sesion.jpeg
+Cada empleado llegará al stand inicial y escaneará un código QR dónde le saldrá la pantalla 1 (inicio_session.jpeg)
+En esa pantalla registrará su identificación y su nombre.
+El sistema le asignará un código de feria y almacenará los datos
+
+Pantalla 2
+Al ingresar, el sistema le asignará un cupo virtual de $10.000 pesos colombianos
+El usuario tendrá que pasar por 4 stands
+- empanadas
+- botilito
+- CDT
+- Caja misteriosa
+Cada una tendrá un QR con un valor asignado para su compra y el usuario podrá disponer de su saldo virtual
+
+Pantalla 3 confirmacion de compra
+Cuando el usuario escanee el QR y confirme la compra debería descargar el saldo y mostrarle la pantalla 4 de movimientos
+
+Pantalla movimientos
+Debe mostrar las compras del usuario y su saldo actual
+
+Pantalla 5.1, 5.2 y 5.3
+La última estación será una caja misteriosa dónde todos los usuarios deberán escoger entre varios QRs una compra adicional que será un imprevisto
+
+El sistema les deberá decir si les alcanza para cubrir este imprevisto y de acuerdo a eso le mostrará alguna de las pantallas
