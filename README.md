@@ -15,7 +15,7 @@ gasto hormiga, ahorro, CDT e imprevistos.
 |---|---|
 | Frontend + API | Next.js 15 (App Router, JavaScript) |
 | Estilos | Tailwind CSS (tokens BCS en `tailwind.config.js`) |
-| Base de datos | MongoDB Atlas M0 |
+| Base de datos | Firebase Firestore (plan Spark, gratis sin tarjeta) |
 | Sesión | JWT firmado (`jose`) |
 | Deploy | Vercel (capa gratuita) |
 
@@ -23,7 +23,7 @@ gasto hormiga, ahorro, CDT e imprevistos.
 
 ```bash
 npm install
-cp .env.example .env        # completar MONGODB_URI, SESSION_SECRET, ADMIN_PASSWORD
+cp .env.example .env        # completar FIREBASE_*, SESSION_SECRET, ADMIN_PASSWORD
 npm run dev                  # http://localhost:3000
 ```
 
@@ -41,18 +41,34 @@ app/
   caja/gastos-hormiga/  Pantalla 5.1 · sin cubrir
   admin/                Dashboard de organizadores
   api/                  Funciones serverless
+  api/
+    registro/           POST documento+nombre -> crea participante, asigna codigo
+    login/               POST documento+codigo -> re-ingreso
+    logout/              POST borra la cookie de sesion
+    me/                   GET participante autenticado
+    pagar/               POST { stand, decision } -> empanadas/botilito
+    cdt/                  POST { monto } -> aporte al CDT
+    imprevisto/          POST { imprevisto } -> caja misteriosa (servidor decide si cubre)
+    health/               GET chequeo de la funcion + ping a Firestore
 lib/
   config.js            Parámetros de la dinámica (stands, imprevistos, montos)
-  db.js                Conexión MongoDB cacheada
-  session.js           Token de sesión del participante
+  db.js                Cliente de Firestore (Firebase Admin SDK)
+  session.js           Token de sesión del participante (JWT)
+  authServer.js        Cookie de sesión (Route Handlers)
+  domain.js            Reglas de negocio puras (sin Firestore) de cada endpoint
+  applyResolution.js   Traduce el resultado de domain.js a un update de Firestore
+  participant.js       Forma del documento del participante + vista para el cliente
+  errors.js            AppError + respuesta de error uniforme
 scripts/
   gen-qr.mjs           Genera los PNG de QR para imprimir
+  reset-db.mjs         Borra participantes/códigos y verifica la conexión
 ```
 
 ## Estado
 
 - [x] Fase 0 · Esqueleto (rutas placeholder, config, componentes base)
-- [ ] Fase 1 · Modelo de datos + API con idempotencia
+- [x] Base de datos en la nube (Firestore, plan Spark, $0)
+- [x] Fase 1 · Modelo de datos + API con idempotencia — probado end-to-end
 - [ ] Fase 2 · Pantallas conectadas + PWA
 - [ ] Fase 3 · Dashboard admin + generación de QR
 - [ ] Fase 4 · Pruebas + deploy

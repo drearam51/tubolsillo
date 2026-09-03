@@ -83,9 +83,9 @@ picos cuando todos escanean en el mismo stand. Carga trivial. Los retos reales s
 
 | Capa | Elección | Límite gratis / nota |
 |---|---|---|
-| Frontend | PWA con Vite + React (o Svelte), estático | Vercel / Netlify / Cloudflare Pages, sobra |
+| Frontend | PWA con Next.js (App Router), estático | Vercel, sobra |
 | API | Funciones serverless de Vercel (Node 20), mismo repo | Hobby: 100 GB-hrs/mes; **sin "sleep"** |
-| DB | **MongoDB Atlas M0** (512 MB, gratis) | 400 docs + movimientos embebidos ≈ <5 MB |
+| DB | **Firebase Firestore** (plan Spark) | 50.000 lecturas/día, 20.000 escrituras/día, 1 GiB — **gratis de verdad, sin tarjeta ni piso de costo** |
 | QR | Script local con `qrcode` (npm) → PNG para imprimir | Gratis, offline |
 | Dominio | `*.vercel.app` (o dominio propio ~$10/año, opcional) | El QR de entrada apunta ahí |
 
@@ -94,18 +94,24 @@ picos cuando todos escanean en el mismo stand. Carga trivial. Los retos reales s
 Los free tier de Render / Railway **duermen** tras inactividad → cold start de 30–50 s
 en plena feria = desastre. Vercel serverless tiene cold start <1 s y no duerme.
 
-### Sobre Cloudflare Workers
+### Por qué Firestore y no MongoDB Atlas
 
-Más generoso aún (100k req/día), pero el driver oficial de MongoDB sobre Workers es
-frágil. Con Vercel (Node real) se usa el driver `mongodb` normal con conexión cacheada
-entre invocaciones — camino probado.
+Atlas retiró el tier M0 (gratis sin condiciones) para proyectos nuevos; lo que ofrece
+ahora es **Flex**, con un piso de ~US$8/mes desde que el cluster existe, tenga tráfico o
+no (ver sección 12). Firestore (plan Spark) sí es gratis sin piso y sin tarjeta, y **no
+se pausa por inactividad** (a diferencia de alternativas como Supabase, que pausa el
+proyecto a los 7 días sin uso — mal encaje para sesiones de trabajo espaciadas). Escalar
+más adelante es activar el plan Blaze (pago por consumo) **en el mismo proyecto**, sin
+migrar de proveedor ni mover datos.
 
-## 5. Modelo de datos — una sola colección `participants`
+## 5. Modelo de datos — Firestore, dos colecciones
 
 ```js
+// participants/{documento}   <- el ID del documento ES el numero de documento:
+//                                lookup O(1) sin indices, y unicidad atomica gratis
+//                                via .create() (falla con ALREADY_EXISTS si ya existe)
 {
-  _id, documento,        // índice único
-  nombre, codigo,        // código 4 dígitos, índice único, asignado por el servidor
+  nombre, codigo,        // código 4 dígitos, asignado por el servidor
   saldo: 10000, cdt: 0,
   gastoHormigaEvitado: 0,
   stands: {
@@ -117,31 +123,48 @@ entre invocaciones — camino probado.
   movimientos: [ /* ~6 entradas embebidas */ ],
   createdAt
 }
+
+// codes/{codigo}   <- reserva del código de feria, mismo truco de unicidad atómica
+{ documento }
 ```
 
-- Movimientos **embebidos** (máx. ~6): una sola colección, sin joins.
-- Configuración (valores de stands, catálogo de imprevistos, flag del CDT) en variables
-  de entorno o una colección `config` de un solo documento.
+- Movimientos **embebidos** (máx. ~6): un documento por participante, sin joins.
+- Configuración (valores de stands, catálogo de imprevistos, flag del CDT) vive en
+  `lib/config.js`, no en la base de datos.
+- El **Admin SDK de Firebase** (usado desde las funciones serverless) **ignora las
+  reglas de seguridad de Firestore** — por eso las reglas del proyecto se dejan
+  cerradas por defecto (`allow read, write: if false;`): nadie entra directo desde el
+  navegador, todo pasa por nuestra API.
 
 ## 6. Flujos críticos
 
 ### Idempotencia (doble escaneo / refresh)
 
-Cada participante transacciona cada stand **una sola vez**. El endpoint de pago hace un
-`findOneAndUpdate` condicional:
+Cada participante transacciona cada stand **una sola vez**. El endpoint de pago hace una
+transacción de Firestore que lee y escribe el mismo documento de forma atómica:
 
 ```js
-db.participants.findOneAndUpdate(
-  { _id, "stands.empanadas": null, saldo: { $gte: valor } },
-  { $inc: { saldo: -valor },
-    $set: { "stands.empanadas": { status: 'comprado', monto: valor, ts } },
-    $push: { movimientos: { tipo: 'compra', label: 'Empanadas', monto: -valor, ts } } }
-)
+await db.runTransaction(async (tx) => {
+  const ref = db.collection("participants").doc(documento);
+  const snap = await tx.get(ref);
+  const data = snap.data();
+
+  if (data.stands.empanadas) return; // ya transaccionó este stand, no hace nada
+  if (data.saldo < valor) throw new Error("SALDO_INSUFICIENTE");
+
+  tx.update(ref, {
+    saldo: data.saldo - valor,
+    "stands.empanadas": { status: "comprado", monto: valor, ts: Date.now() },
+    movimientos: FieldValue.arrayUnion({
+      tipo: "compra", label: "Empanadas", monto: -valor, ts: Date.now(),
+    }),
+  });
+});
 ```
 
-Si devuelve `null` → o ya transaccionó ese stand (se muestra el resultado existente) o
-no le alcanza el saldo. **Actualización de un solo documento = atómica en MongoDB**; no
-se necesitan transacciones multi-documento.
+Si `stands.empanadas` ya existe, la transacción no hace nada y el endpoint devuelve el
+resultado ya guardado. **Una transacción de un solo documento = atómica en Firestore**;
+no hace falta nada multi-documento para este caso.
 
 ### El precio lo pone el servidor
 
@@ -181,9 +204,9 @@ cada 15–30 s**:
 |---|---|
 | Wifi / celular saturado con 400 personas | PWA con service worker (cachea el shell), payloads JSON mínimos, imágenes estáticas en CDN, UI de reintento clara (operaciones idempotentes → reintentar es seguro) |
 | Cold start de función | Vercel <1 s; opcional: un cron que "calienta" la función cada 5 min durante el evento |
-| Límite de 500 conexiones en M0 | Conexión cacheada en el módulo serverless (patrón estándar); la carga real es bajísima |
+| Cuota diaria de Firestore Spark (50k lecturas / 20k escrituras) | Muy por encima del volumen esperado (sección 3); si se acerca, activar Blaze en el mismo proyecto sin migrar nada |
 | Usuario pierde el token (cierra pestaña) | Re-login con documento + código (el código es recuperable / reimprimible en el stand 0) |
-| M0 sin SLA | Evento de pocas horas; probabilidad de incidente despreciable |
+| Firestore Spark sin SLA formal | Evento de pocas horas; probabilidad de incidente despreciable |
 
 ## 9. Cumplimiento de datos (es un banco)
 
@@ -196,8 +219,8 @@ Se recolecta **cédula + nombre** → aplica Ley 1581 de 2012 (Habeas Data). Se 
 
 ## 10. Costo total
 
-**$0** con `*.vercel.app` + MongoDB Atlas M0. ~$10/año si se quiere un dominio propio
-para una URL más limpia en el QR de entrada.
+**$0** con `*.vercel.app` + Firebase Firestore (plan Spark, sin tarjeta). ~$10/año si se
+quiere un dominio propio para una URL más limpia en el QR de entrada.
 
 ## 11. Ajustes respecto a la idea original
 
@@ -210,3 +233,55 @@ para una URL más limpia en el QR de entrada.
    del saldo. Falta diseñar su pantalla (input de monto).
 4. **Caja misteriosa**: varios imprevistos posibles (≥4), no uno solo.
 5. **Dashboard de organizadores**: pantalla nueva, no está en el set original.
+
+## 12. Actualización (2026-08-29) — 1000 usuarios reales y plan de migración
+
+El conteo real de asistentes subió de ~400 (sección 3) a **~1000**. Con ese volumen,
+**MongoDB Atlas M0** deja de ser prudente como base para el evento en vivo:
+
+- Es un cluster **compartido** sin SLA — puede sufrir *throttling* por vecinos ruidosos
+  justo en el pico de tráfico (todos escaneando QR a la vez).
+- Límite duro de **500 conexiones**; con ráfagas de 1000 personas es más fácil rozarlo.
+
+### Decisión acordada
+
+1. **La demo se presenta con la arquitectura actual** (secciones 4–10, capa 100%
+   gratuita: Vercel Hobby + Atlas M0). Sin cambios de infraestructura para la demo.
+2. Después de la demo, se calcula el **presupuesto de migración a capacidad dedicada**
+   y se pasa a aprobación.
+3. **Solo si se aprueba el presupuesto**, se migra antes del evento real. Si no se
+   aprueba, el evento corre sobre la capa gratuita asumiendo el riesgo descrito arriba.
+
+### Plan de migración (a ejecutar solo si se aprueba)
+
+> Actualizado por la sección 13: la base de datos ya no es MongoDB, es Firestore. La
+> fila de "Base de datos" de esta tabla queda así:
+
+| Componente | Cambio propuesto | Costo estimado |
+|---|---|---|
+| Base de datos | Firestore Spark → activar **plan Blaze** (pago por consumo) en el mismo proyecto. Mismas cuotas gratis se mantienen; solo se cobra lo que las exceda | Centavos de dólar para el volumen del evento (sección 3) |
+| Cómputo | Vercel Hobby → **Vercel Pro** (uso comercial permitido en términos, mejor protección de rate-limit) | US$20/mes, cancelable el mes siguiente |
+| **Total** | | **~US$20, pago único** (no suscripción permanente) |
+
+No requiere cambios de código ni migrar datos: activar Blaze es un cambio de plan
+**dentro del mismo proyecto de Firebase**. Antes de dar por buena la migración, correr
+una prueba de carga (`k6` o `autocannon`) simulando ~1000 usuarios contra `/api/pagar` e
+`/api/imprevisto`.
+
+## 13. Actualización (2026-08-29) — cambio de MongoDB Atlas a Firebase Firestore
+
+Con Atlas M0 retirado para proyectos nuevos (sección 4), la alternativa gratuita real de
+Atlas es Flex, que cobra un piso de ~US$8/mes desde que el cluster existe, tenga tráfico
+o no. Para evitar cualquier costo mientras se construye el demo, se cambió de proveedor:
+
+- **MongoDB Atlas → Firebase Firestore** (plan Spark). Gratis sin tarjeta, sin piso de
+  costo, sin pausa por inactividad (a diferencia de Supabase), y ya en la nube desde el
+  primer día — no hace falta distinguir "local" de "producción" para el demo.
+- Modelo de datos: se mantiene el mismo espíritu (documento por participante,
+  movimientos embebidos) — ver sección 5 actualizada. Cambia el motor de idempotencia:
+  `findOneAndUpdate` de Mongo → transacción (`runTransaction`) de Firestore.
+- Escalar después de aprobado el presupuesto: activar **Blaze** en el mismo proyecto de
+  Firebase (pago por consumo, sin migrar nada) — ver tabla de la sección 12.
+- Cambio de código: `lib/db.js` y `scripts/reset-db.mjs` ahora usan `firebase-admin` en
+  vez de `mongodb`. Variables de entorno: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`,
+  `FIREBASE_PRIVATE_KEY` reemplazan a `MONGODB_URI` / `MONGODB_DB`.
