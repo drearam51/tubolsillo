@@ -1,19 +1,64 @@
-import { Screen, Button } from "@/components/ui";
+"use client";
 
-// Pantalla 5.1 - gastos_hormiga (el saldo se fue, el imprevisto queda sin cubrir)
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Screen, Button } from "@/components/ui";
+import { SALDO_INICIAL } from "@/lib/config";
+import { money } from "@/lib/format";
+
+// Pantalla 5.1 - gastos_hormiga. Solo se muestra si /api/me confirma que la
+// caja misteriosa quedo SIN cubrir -- si no, redirige.
 export default function GastosHormigaPage() {
+  const router = useRouter();
+  const [me, setMe] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (!data.ok) {
+          router.replace("/");
+          return;
+        }
+        setMe(data);
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (!me) return;
+    const m = me.stands.misteriosa;
+    if (!m || m.cubierto) router.replace(m ? "/caja/ahorro" : "/home");
+  }, [me, router]);
+
+  if (loading || !me || !me.stands.misteriosa || me.stands.misteriosa.cubierto) {
+    return (
+      <Screen>
+        <p className="mt-20 text-center text-white/60">Cargando…</p>
+      </Screen>
+    );
+  }
+
+  const m = me.stands.misteriosa;
+  const gastado = SALDO_INICIAL - me.saldo;
+  const ahorroDisponible = me.saldo + me.cdt;
+
   return (
     <Screen className="items-center text-center">
-      <div className="mt-10 grid h-24 w-24 place-items-center rounded-full bg-bcs-red text-4xl">
-        ⚠
-      </div>
+      <div className="mt-10 grid h-24 w-24 place-items-center rounded-full bg-bcs-red text-4xl">⚠</div>
       <h1 className="mt-8 text-4xl font-extrabold">Tu saldo se fue en gastos hormiga</h1>
 
       <div className="mt-8 w-full rounded-card bg-white/10 p-6 text-left">
-        <Row label="Gastaste en la feria" value="$10.000" />
-        <Row label="Ahorro disponible" value="$0" />
+        <Row label="Gastaste en la feria" value={money(gastado)} />
+        <Row label="Ahorro disponible" value={money(ahorroDisponible)} />
         <div className="my-3 border-t border-white/15" />
-        <Row label="Imprevisto sin cubrir" value="-$5.000" valueClass="text-bcs-red-400" bold />
+        <Row label="Imprevisto sin cubrir" value={`-${money(m.costo)}`} valueClass="text-bcs-red-400" bold />
       </div>
 
       <p className="mt-6 text-white/80">

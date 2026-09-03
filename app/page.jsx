@@ -87,7 +87,7 @@ export default function LoginPage() {
           <input
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
-            placeholder="Camila"
+            placeholder="Nombre"
             required
             className="mt-1 w-full rounded-xl bg-slate-100 px-4 py-3"
           />

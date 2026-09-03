@@ -7,30 +7,25 @@ import { QrScanner } from "@/components/QrScanner";
 import { STANDS } from "@/lib/config";
 import { money } from "@/lib/format";
 
-// Esta pantalla solo maneja los stands de "gasto hormiga" (empanadas, botilito).
-// El CDT es tipo "cdt" y tiene su propia pantalla (/cdt).
-function esStandDeGasto(key) {
-  return Boolean(STANDS[key] && STANDS[key].tipo === "gasto");
-}
+const info = STANDS.cdt;
 
-// Pantalla 3 - confirmacion_compra, para empanadas y botilito.
-// Flujo: si llega con ?c=<stand> en la URL (deep link de un QR ya escaneado con
-// la camara nativa del celular) salta directo a confirmar; si no, activa la
-// camara dentro de la app (decision del equipo: ver conversacion).
-export default function PagarClient() {
+// Parada 3 - CDT. Solo hay un stand posible aqui, asi que el escaneo confirma
+// presencia en el stand mas que "cual stand es" (mismo patron que /pagar).
+export default function CdtClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const scannedRef = useRef(false);
 
-  const [stand, setStand] = useState(() => searchParams.get("c"));
+  const [scanned, setScanned] = useState(() => searchParams.get("c") === "cdt");
   const [scanError, setScanError] = useState(() => {
     const initial = searchParams.get("c");
-    return initial && !esStandDeGasto(initial)
-      ? "Ese enlace no corresponde a un stand válido. Escanea el código impreso."
+    return initial && initial !== "cdt"
+      ? "Ese enlace no corresponde al stand de CDT. Escanea el código impreso."
       : null;
   });
   const [me, setMe] = useState(null);
   const [loadingMe, setLoadingMe] = useState(true);
+  const [monto, setMonto] = useState("");
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState(null);
   const [error, setError] = useState(null);
@@ -67,43 +62,42 @@ export default function PagarClient() {
         setScanError("Ese código QR no es de Tubolsillo. Intenta con otro.");
         return;
       }
-      const c = url.searchParams.get("c");
-      if (c && esStandDeGasto(c)) {
+      if (url.searchParams.get("c") === "cdt" && url.pathname === "/cdt") {
         scannedRef.current = true;
         setScanError(null);
-        setStand(c);
+        setScanned(true);
         return;
       }
-      if (url.pathname !== "/pagar") {
-        // QR valido de Tubolsillo pero de otra parada (CDT, caja misteriosa...)
+      if (url.pathname !== "/cdt") {
+        // QR valido de Tubolsillo pero de otra parada
         scannedRef.current = true;
         router.push(url.pathname + url.search);
         return;
       }
-      setScanError("Ese código QR no es de un stand válido. Intenta con otro.");
+      setScanError("Ese código QR no es del stand de CDT. Intenta con otro.");
     },
     [router]
   );
 
   function reintentarEscaneo() {
     scannedRef.current = false;
-    setStand(null);
+    setScanned(false);
     setScanError(null);
     setError(null);
   }
 
-  async function resolver(decision) {
+  async function resolver(montoAportar) {
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch("/api/pagar", {
+      const r = await fetch("/api/cdt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stand, decision }),
+        body: JSON.stringify({ monto: montoAportar }),
       });
       const data = await r.json();
       if (!data.ok) {
-        setError(data.message || "No pudimos procesar el pago. Intenta de nuevo.");
+        setError(data.message || "No pudimos procesar el aporte. Intenta de nuevo.");
         return;
       }
       setResultado(data);
@@ -122,20 +116,20 @@ export default function PagarClient() {
     );
   }
 
-  // Ya se confirmo/ahorro en esta sesion de pantalla
+  // Ya se resolvio (aporto o "ahora no") en esta sesion de pantalla
   if (resultado) {
-    const registro = resultado.stands[stand];
-    const comprado = registro?.status === "comprado";
+    const registro = resultado.stands.cdt;
+    const aportado = registro?.status === "aportado";
     return (
       <Screen>
         <h1 className="text-center text-2xl font-extrabold">
-          {comprado ? "¡Compra confirmada!" : "Decidiste ahorrar"}
+          {aportado ? "¡CDT abierto!" : "Seguiste de largo"}
         </h1>
         <Card className="mt-8">
           <div className="flex items-center justify-between">
-            <span className="text-lg font-bold">{STANDS[stand].nombre}</span>
-            <span className={`text-lg font-extrabold ${comprado ? "text-bcs-red" : "text-bcs-blue-600"}`}>
-              {comprado ? `-${money(registro.monto)}` : "+$0"}
+            <span className="text-lg font-bold">CDT Banco Caja Social</span>
+            <span className={`text-lg font-extrabold ${aportado ? "text-bcs-red" : "text-slate-400"}`}>
+              {aportado ? `-${money(registro.monto)}` : "$0"}
             </span>
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-slate-500">
@@ -145,31 +139,27 @@ export default function PagarClient() {
           <Button as="link" href="/home" className="mt-4">
             Volver al recorrido
           </Button>
-          <Button as="link" href="/movimientos" variant="ghost" className="mt-1">
-            Ver movimientos
-          </Button>
         </Card>
       </Screen>
     );
   }
 
-  // Stand identificado (por QR o por deep link) -> confirmar
-  if (stand && esStandDeGasto(stand)) {
-    const info = STANDS[stand];
-    const yaResuelto = me?.stands?.[stand];
+  // Stand confirmado (por QR o deep link) -> formulario de aporte
+  if (scanned) {
+    const yaResuelto = me?.stands?.cdt;
     return (
       <Screen>
         <h1 className="text-center text-2xl font-extrabold">
-          {yaResuelto ? "Ya pasaste por este stand" : "Confirma tu compra"}
+          {yaResuelto ? "Ya pasaste por este stand" : "CDT Banco Caja Social"}
         </h1>
+        <p className="mt-2 text-center text-white/70">
+          Un producto financiero: decides cuánto de tu bolsillo quieres poner a trabajar.
+        </p>
+
         <Card className="mt-8">
           <p className="text-sm font-bold uppercase tracking-wide text-bcs-blue-600">
             Stand {info.parada} · {info.etiqueta}
           </p>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-2xl font-extrabold">{info.nombre}</span>
-            <span className="text-2xl font-extrabold text-bcs-red">-{money(info.valor)}</span>
-          </div>
           <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-slate-500">
             <span>Tu saldo actual</span>
             <span className="font-bold text-bcs-navy">{money(me?.saldo)}</span>
@@ -181,12 +171,25 @@ export default function PagarClient() {
             </Button>
           ) : (
             <>
+              <label className="mt-4 block text-sm text-slate-500">¿Cuánto quieres aportar?</label>
+              <input
+                inputMode="numeric"
+                value={monto}
+                onChange={(e) => setMonto(e.target.value.replace(/\D/g, ""))}
+                placeholder={String(info.minimo)}
+                className="mt-1 w-full rounded-xl bg-slate-100 px-4 py-3 text-lg"
+              />
+              <p className="mt-2 text-xs text-slate-400">
+                Mínimo {money(info.minimo)} · No puede superar tu saldo ({money(me?.saldo)})
+              </p>
+
               {error && <p className="mt-3 text-sm text-bcs-red">{error}</p>}
-              <Button onClick={() => resolver("comprar")} disabled={busy} className="mt-4">
-                {busy ? "Procesando…" : "Confirmar compra"}
+
+              <Button onClick={() => resolver(Number(monto))} disabled={busy || !monto} className="mt-5">
+                {busy ? "Procesando…" : "Abrir mi CDT"}
               </Button>
-              <Button onClick={() => resolver("ahorrar")} disabled={busy} variant="ghost" className="mt-1">
-                Prefiero ahorrar este dinero
+              <Button onClick={() => resolver(0)} disabled={busy} variant="ghost" className="mt-1">
+                Ahora no
               </Button>
             </>
           )}
@@ -195,16 +198,12 @@ export default function PagarClient() {
     );
   }
 
-  // Sin stand todavia -> camara dentro de la app
+  // Sin confirmar todavia -> camara dentro de la app
   return (
     <Screen>
-      <h1 className="text-center text-2xl font-extrabold">Escanea el producto</h1>
-      <p className="mt-2 text-center text-white/70">
-        Apunta al código QR del stand para pagar con tu bolsillo
-      </p>
+      <h1 className="text-center text-2xl font-extrabold">Escanea el stand</h1>
+      <p className="mt-2 text-center text-white/70">Apunta al código QR del stand de CDT</p>
 
-      {/* Si llegamos aca es porque no hay un stand valido todavia (ni por deep
-          link ni por escaneo previo) -- la camara siempre debe estar activa. */}
       <div className="mt-8">
         <QrScanner onDecode={handleDecode} />
       </div>
@@ -217,10 +216,6 @@ export default function PagarClient() {
           </button>
         </div>
       )}
-
-      <p className="mt-auto pt-8 text-center text-sm text-white/50">
-        Cada decisión suma. Tu saldo es tu ahorro.
-      </p>
     </Screen>
   );
 }

@@ -1,7 +1,54 @@
-import { Screen } from "@/components/ui";
+"use client";
 
-// Pantalla 5.3 - respuesta_ahorro (el ahorro cubre el imprevisto)
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Screen } from "@/components/ui";
+import { money } from "@/lib/format";
+
+// Pantalla 5.3 - respuesta_ahorro. Solo se muestra si /api/me confirma que la
+// caja misteriosa quedo cubierta -- si no, redirige (nadie llega aca "de fantasia").
 export default function AhorroPage() {
+  const router = useRouter();
+  const [me, setMe] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (!data.ok) {
+          router.replace("/");
+          return;
+        }
+        setMe(data);
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (!me) return;
+    const m = me.stands.misteriosa;
+    if (!m || !m.cubierto) router.replace(m ? "/caja/gastos-hormiga" : "/home");
+  }, [me, router]);
+
+  if (loading || !me || !me.stands.misteriosa?.cubierto) {
+    return (
+      <Screen>
+        <p className="mt-20 text-center text-white/60">Cargando…</p>
+      </Screen>
+    );
+  }
+
+  const m = me.stands.misteriosa;
+  // saldo/cdt ya reflejan el descuento del imprevisto -> sumamos el costo de
+  // vuelta para mostrar cuanto tenian disponible antes de cubrirlo.
+  const ahorroDisponible = me.saldo + me.cdt + m.costo;
+
   return (
     <Screen className="items-center text-center">
       <div className="mt-10 grid h-24 w-24 place-items-center rounded-full bg-white text-4xl text-bcs-blue-600">
@@ -10,8 +57,8 @@ export default function AhorroPage() {
       <h1 className="mt-8 text-4xl font-extrabold">¡Tu ahorro te respondió!</h1>
 
       <div className="mt-8 w-full rounded-card bg-white p-6 text-left text-bcs-navy">
-        <Row label="Ahorro disponible" value="$5.000" />
-        <Row label="Costo del imprevisto" value="-$5.000" valueClass="text-bcs-red" />
+        <Row label="Ahorro disponible" value={money(ahorroDisponible)} />
+        <Row label="Costo del imprevisto" value={`-${money(m.costo)}`} valueClass="text-bcs-red" />
         <div className="my-3 border-t border-slate-200" />
         <Row label="Imprevisto cubierto" value="$0 en deuda" valueClass="text-bcs-blue-600" bold />
       </div>

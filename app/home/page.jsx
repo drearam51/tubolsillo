@@ -40,6 +40,15 @@ export default function HomePage() {
 
   const paradas = Object.entries(STANDS).sort((a, b) => a[1].parada - b[1].parada);
   const misteriosaHecha = Boolean(me.stands.misteriosa);
+  const totalParadas = paradas.length + 1; // + caja misteriosa
+  const resueltas = paradas.filter(([key]) => me.stands[key]).length + (misteriosaHecha ? 1 : 0);
+  const completo = resueltas >= totalParadas;
+
+  const cta = completo
+    ? { texto: "Ver mi resumen", href: "/movimientos" }
+    : resueltas === 0
+      ? { texto: "Comenzar recorrido", href: "/pagar" }
+      : { texto: "Seguir recorrido", href: "/pagar" };
 
   return (
     <Screen>
@@ -55,12 +64,16 @@ export default function HomePage() {
       </div>
 
       <Card className="mt-8">
-        <h2 className="text-xl font-extrabold">Te invitamos a recorrer nuestros stands</h2>
+        <h2 className="text-xl font-extrabold">
+          {completo ? "¡Completaste el recorrido!" : "Te invitamos a recorrer nuestros stands"}
+        </h2>
         <p className="mt-2 text-sm text-slate-500">
-          Conoce y adquiere nuestros productos y servicios. Cada compra se descuenta de tu bolsillo.
+          {completo
+            ? "Revisa cómo te fue en cada parada y qué tan preparado quedó tu bolsillo."
+            : `Conoce y adquiere nuestros productos y servicios. Llevas ${resueltas} de ${totalParadas} paradas.`}
         </p>
-        <Button as="link" href="/pagar" className="mt-4">
-          Comenzar recorrido
+        <Button as="link" href={cta.href} className="mt-4">
+          {cta.texto}
         </Button>
       </Card>
 
