@@ -12,7 +12,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Primer ingreso: documento + nombre -> el servidor asigna el codigo de feria.
+// Unico punto de entrada: documento + nombre. Si el documento no existe se crea
+// (el servidor asigna el codigo de feria internamente, el usuario nunca lo
+// escribe); si ya existe, esto funciona como login -- no hay pantalla ni campo
+// de "codigo" en la UI, ver docs/analisis-arquitectura.md.
 export async function POST(req) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -26,13 +29,7 @@ export async function POST(req) {
 
     await db.runTransaction(async (tx) => {
       const partSnap = await tx.get(partRef);
-      if (partSnap.exists) {
-        throw new AppError(
-          "DOCUMENTO_YA_REGISTRADO",
-          409,
-          "Ese documento ya tiene una cuenta. Ingresa con tu codigo de feria."
-        );
-      }
+      if (partSnap.exists) return; // ya existe: solo inicia sesion, no se toca su saldo/nombre
 
       // Reserva atomica de un codigo de 4 digitos que no este en uso.
       let codigo = null;

@@ -4,8 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Screen, Card, Button } from "@/components/ui";
 import { QrScanner } from "@/components/QrScanner";
-import { STAND_LABELS } from "@/lib/publicConfig";
+import { STANDS } from "@/lib/config";
 import { money } from "@/lib/format";
+
+// Esta pantalla solo maneja los stands de "gasto hormiga" (empanadas, botilito).
+// El CDT es tipo "cdt" y tiene su propia pantalla (/cdt).
+function esStandDeGasto(key) {
+  return Boolean(STANDS[key] && STANDS[key].tipo === "gasto");
+}
 
 // Pantalla 3 - confirmacion_compra, para empanadas y botilito.
 // Flujo: si llega con ?c=<stand> en la URL (deep link de un QR ya escaneado con
@@ -19,7 +25,7 @@ export default function PagarClient() {
   const [stand, setStand] = useState(() => searchParams.get("c"));
   const [scanError, setScanError] = useState(() => {
     const initial = searchParams.get("c");
-    return initial && !STAND_LABELS[initial]
+    return initial && !esStandDeGasto(initial)
       ? "Ese enlace no corresponde a un stand válido. Escanea el código impreso."
       : null;
   });
@@ -55,7 +61,7 @@ export default function PagarClient() {
     } catch {
       c = null;
     }
-    if (!c || !STAND_LABELS[c]) {
+    if (!c || !esStandDeGasto(c)) {
       setScanError("Ese código QR no es de un stand válido. Intenta con otro.");
       return;
     }
@@ -112,7 +118,7 @@ export default function PagarClient() {
         </h1>
         <Card className="mt-8">
           <div className="flex items-center justify-between">
-            <span className="text-lg font-bold">{STAND_LABELS[stand].nombre}</span>
+            <span className="text-lg font-bold">{STANDS[stand].nombre}</span>
             <span className={`text-lg font-extrabold ${comprado ? "text-bcs-red" : "text-bcs-blue-600"}`}>
               {comprado ? `-${money(registro.monto)}` : "+$0"}
             </span>
@@ -133,8 +139,8 @@ export default function PagarClient() {
   }
 
   // Stand identificado (por QR o por deep link) -> confirmar
-  if (stand && STAND_LABELS[stand]) {
-    const info = STAND_LABELS[stand];
+  if (stand && esStandDeGasto(stand)) {
+    const info = STANDS[stand];
     const yaResuelto = me?.stands?.[stand];
     return (
       <Screen>
