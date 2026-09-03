@@ -69,6 +69,6 @@ scripts/
 - [x] Fase 0 · Esqueleto (rutas placeholder, config, componentes base)
 - [x] Base de datos en la nube (Firestore, plan Spark, $0)
 - [x] Fase 1 · Modelo de datos + API con idempotencia — probado end-to-end
-- [ ] Fase 2 · Pantallas conectadas + PWA
-- [ ] Fase 3 · Dashboard admin + generación de QR
-- [ ] Fase 4 · Pruebas + deploy
+- [x] Fase 2 · Las 8 pantallas conectadas a la API real, cámara QR en la app — probado end-to-end
+- [ ] Fase 3 · Dashboard admin + generación de QR para imprimir
+- [ ] Fase 4 · Pruebas de carga, PWA (manifest ya existe, falta service worker) + deploy final
